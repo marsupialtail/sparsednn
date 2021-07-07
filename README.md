@@ -1,6 +1,6 @@
-## SPARSEDNN
-# If you want to use this repo, please send me an email: zihengw@stanford.edu, or raise a Github issue. 
-
+# SPARSEDNN
+**If you want to use this repo, please send me an email: zihengw@stanford.edu, or raise a Github issue. 
+**
 Fast sparse deep learning on CPUs. This is the kernel library generator described in the paper: https://arxiv.org/abs/2101.07948
 
 Python API: python fastsparse.py. Minimal required dependencies. Should work anywhere.
