@@ -4,6 +4,7 @@
 **
 
 Fast sparse deep learning on CPUs. This is the kernel library generator described in the paper: https://arxiv.org/abs/2101.07948
+My other repo on sparse deep learning on GPUs: https://github.com/marsupialtail/gpu-sparsert. Will merge at some point when I'm feeling less lazy.
 
 Python API: python fastsparse.py. Minimal required dependencies. Should work anywhere.
 
