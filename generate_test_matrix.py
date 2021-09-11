@@ -23,8 +23,10 @@ AC = np.dot(AB,BC) + np.expand_dims(bias,1)
 if int8:
     #AC = AC.astype(np.int32)
     AC = AC.astype(np.int8)
-
-np.save("bias.npy",bias.astype(np.float32))
+if int8:
+    np.save("bias.npy",bias)
+else:
+    np.save("bias.npy",bias.astype(np.float32))
 np.save("matrix.npy",AB)
 np.save("matrix_transposed.npy",AB.transpose())
 np.save("BC.npy",BC)
