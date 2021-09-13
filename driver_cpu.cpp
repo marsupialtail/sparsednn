@@ -13,7 +13,7 @@
 #include <x86intrin.h>
 // we are doing AC = AB * BC, reduce across the B dimension
 // binding B to the x dimension, A to the y dimension and C to the z dimension
-
+#include <chrono>
 //#define 64 (64 / 1 / Tsy)
 #include <cstdlib>
 #include <pthread.h>
@@ -314,8 +314,14 @@ int main()
 
     char *error_str;
 
-    double s_initial, s_elapsed;
-    s_initial = dsecnd();
+     
+   using std::chrono::high_resolution_clock;
+    using std::chrono::duration_cast;
+    using std::chrono::duration;
+    using std::chrono::milliseconds;
+
+    auto t1 = high_resolution_clock::now();
+
     handle = dlopen ("./test.so", RTLD_LAZY);
     if (!handle) {
         fputs (dlerror(), stderr);
@@ -327,7 +333,9 @@ int main()
         fputs(error_str, stderr);
         exit(1);
     }
-       s_elapsed = (dsecnd() - s_initial) / 1;
+    auto t2 = high_resolution_clock::now();
+    duration<double, std::milli> ms_double = t2 - t1;
+    printf (" == Load shared library == \n== at %.5f milliseconds == \n ", ms_double.count() );
 
         //printf (" Load at %.5f milliseconds == \n\n", (s_elapsed * 1000));
 
@@ -369,7 +377,8 @@ int main()
     void * status;
     counter = 0;
         //std::cout << pool.counter << " " << 1 << std::endl;
-    s_initial = dsecnd();
+
+    t1 = high_resolution_clock::now();
 
     thread_data_reps args[4];
     args[0].arg = &td[0][0];
@@ -397,11 +406,11 @@ int main()
 //
 #endif
 
-    s_elapsed = (dsecnd() - s_initial) / 10;
-	
+    t2 = high_resolution_clock::now();
+    ms_double = t2 - t1;	
 	//memset(result,0,A_dim * C_dim * sizeof(result));
 
-	int reps = 2 / s_elapsed;
+	int reps = 20000 / ms_double.count();
 //    int reps = 20;
 	args[0].reps = reps;
     args[1].reps = reps;
@@ -410,7 +419,7 @@ int main()
 
 
 
-    s_initial = dsecnd();
+    t1 = high_resolution_clock::now();
 
     counter = 0;
     issed = 0;
@@ -432,10 +441,10 @@ int main()
     }
 //
 #endif
+   t2 = high_resolution_clock::now();
+    ms_double = t2 - t1;
+    printf (" == spmm microkernel == \n== at %.5f milliseconds == \n == %d reps == ", (ms_double.count() / reps), reps);
 
-       s_elapsed = (dsecnd() - s_initial) / 1;
-
-        printf (" == SpMM matmul == \n== at %.5f milliseconds == \n == %d reps ==", (s_elapsed * 1000 / reps), reps);
     
 //    dlclose(handle);
 #if INT8
