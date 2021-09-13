@@ -1,5 +1,4 @@
 #include <cnpy.h>
-#include "mkl.h"
 #include <vector>
 #include <iostream>
 #include <fstream>
@@ -16,14 +15,7 @@
 #include <chrono>
 //#define 64 (64 / 1 / Tsy)
 #include <cstdlib>
-#include <pthread.h>
-#include <pool.h>
-#include <mutex>
 using namespace std;
-
-mutex cout_lock;
-#define trace(x) { scoped_lock<mutex> lock(cout_lock); std::cout << x << std::endl; }
-
 
 const int COUNT = 4;
 const int WORK = 10'000'000;
@@ -171,7 +163,6 @@ void spmm ( const int * AB_off, const float * AB_vals, const int * A_idx, const 
 }
 
 
-static std::atomic<int> counter;
 
 static void* (*mm)(void*);
 #if INT8
@@ -180,28 +171,13 @@ static int * ref1;
 static float * ref1;
 #endif
 
-void * thread_func(void* data) {
-    struct thread_data_reps *my_data = (struct thread_data_reps * ) data;
-    int oldval = 0;//-1;
-    int issed = 0;
-
-    while(issed <my_data->reps){
-
-        mm(my_data->arg);
-        counter += 1;
-        while (counter < oldval +4);
-
-        oldval += 4;
-        issed++;
-    }
-}
 
 int main()
 {
 #if INT8
- ref1 =(int* ) mkl_malloc(A_dim * C_dim * 4, 128);
+ ref1 =(int* ) aligned_alloc(128, A_dim * C_dim * 4);
 #else
- ref1 =(float* ) mkl_malloc(A_dim * C_dim * 4, 128);
+ ref1 =(float* ) aligned_alloc(128,A_dim * C_dim * 4);
 #endif
 
 	cnpy::NpyArray arr1 = cnpy::npy_load("BC.npy");
@@ -262,10 +238,10 @@ int main()
 
 #if X86
 #if INT8
-    int8_t * BCs = (int8_t*) mkl_malloc(B_dim * C_dim, 128);
+    int8_t * BCs = (int8_t*) aligned_alloc(128, B_dim * C_dim);
     std::memcpy(&BCs[0],BC_unaligned,B_dim * C_dim);
 #else
-    float* BCs = (float*) mkl_malloc(B_dim * C_dim * 4, 128);
+    float* BCs = (float*) aligned_alloc(128, B_dim * C_dim * 4);
     std::memcpy(&BCs[0],BC_unaligned,B_dim * C_dim * 4);
 
 #endif
@@ -280,12 +256,12 @@ int main()
 
 	// the intermediate results are in int32 so they need more space
 	int8_t * result;
-	result = (int8_t *)mkl_malloc(A_dim * C_dim *4 , 128);
+	result = (int8_t *)aligned_alloc(128, A_dim * C_dim *4 );
 	memset(result,0,A_dim * C_dim *4 );
 
 #else
 	float *result;
-    result = (float *)mkl_malloc(A_dim * C_dim *sizeof(result), 128);
+    result = (float *)aligned_alloc(128,A_dim * C_dim *sizeof(result));
     memset(result,0,A_dim * C_dim * sizeof(result));
 
 //    for(int i = 0; i < A_dim*C_dim; i ++)
@@ -339,7 +315,6 @@ int main()
 
         //printf (" Load at %.5f milliseconds == \n\n", (s_elapsed * 1000));
 
-    thread_pool pool;
 
   struct thread_data td[1000][THREADS];
   for(int j = 0 ; j < 1000; j ++){
@@ -365,46 +340,17 @@ int main()
 
 	}
   }
-    int oldval = -1;
     auto issed = 0;
 
-
-
-    oldval = -1;
-    issed = 0;
-
-    pthread_t threads[4];
     void * status;
-    counter = 0;
-        //std::cout << pool.counter << " " << 1 << std::endl;
 
     t1 = high_resolution_clock::now();
 
-    thread_data_reps args[4];
-    args[0].arg = &td[0][0];
-    args[0].reps = 10;
-    args[1].arg = &td[0][1];
-    args[1].reps = 10;
-    args[2].arg = &td[0][2];
-    args[2].reps = 10;
-    args[3].arg = &td[0][3];
-    args[3].reps = 10;
-#if MULTI
-    pthread_create(&threads[0],NULL,&thread_func,&args[0]);
-    pthread_create(&threads[1],NULL,&thread_func,&args[1]);
-    pthread_create(&threads[2],NULL,&thread_func,&args[2]);
-    thread_func(&args[3]);
-    pthread_join(threads[0],&status);
-    pthread_join(threads[1],&status);
-    pthread_join(threads[2],&status);
-#else
     while(issed < 10 ) {
 
         mm(&td[0][0]);
         issed += 1;
     }
-//
-#endif
 
     t2 = high_resolution_clock::now();
     ms_double = t2 - t1;	
@@ -412,35 +358,17 @@ int main()
 
 	int reps = 20000 / ms_double.count();
 //    int reps = 20;
-	args[0].reps = reps;
-    args[1].reps = reps;
-    args[2].reps = reps;
-    args[3].reps = reps;
-
-
 
     t1 = high_resolution_clock::now();
 
-    counter = 0;
     issed = 0;
     std::cout << reps << std::endl;
 
-#if MULTI
-    pthread_create(&threads[0],NULL,&thread_func,&args[0]);
-    pthread_create(&threads[1],NULL,&thread_func,&args[1]);
-    pthread_create(&threads[2],NULL,&thread_func,&args[2]);
-    thread_func(&args[3]);
-    pthread_join(threads[0],&status);
-    pthread_join(threads[1],&status);
-    pthread_join(threads[2],&status);
-#else
     while(issed < reps ) {
 
         mm(&td[0][0]);
         issed += 1;
     }
-//
-#endif
    t2 = high_resolution_clock::now();
     ms_double = t2 - t1;
     printf (" == spmm microkernel == \n== at %.5f milliseconds == \n == %d reps == ", (ms_double.count() / reps), reps);
