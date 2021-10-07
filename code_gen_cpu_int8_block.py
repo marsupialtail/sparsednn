@@ -1,9 +1,7 @@
-# this program basically does a constexpr and generates cuda code
 import textwrap
 import numpy as np
 from code_fragments import *
 from utils import *
-
 
 import argparse
 parser = argparse.ArgumentParser(description='CodeGen V1')
@@ -15,39 +13,27 @@ parser.add_argument('--AT', type=int, default=12)
 parser.add_argument('--C_blocks', type=int, default=12)
 parser.add_argument('--CT',type=int, default=1)
 parser.add_argument('--B_blocks',type=int,default=1)
-parser.add_argument('--Gy', type=int, default=12)
 parser.add_argument('--infile', default=None, type=str)
 parser.add_argument('--infile_bias', default=None, type=str)
-parser.add_argument('--outfile', default=None, type=str)
 parser.add_argument('--outfile_asm', default= None, type = str)
-parser.add_argument('--in_format', default="NCHW",type=str)
-parser.add_argument('--out_format', default="NCHW",type=str)
-parser.add_argument('--Tsb',type=float,default=1)
 parser.add_argument('--fuse',default=False,action='store_true')
 parser.add_argument('--x86',default=False,action='store_true')
 parser.add_argument('--arm',default=False,action='store_true')
-parser.add_argument('--threads',type = int, default=4)
 parser.add_argument('--relu',default=False,action='store_true')
 parser.add_argument('--no_row_skip',default=False,action='store_true')
 args = parser.parse_args()
-GY = args.Gy
 FUSE_END = args.fuse
 RELU = args.relu
 print(FUSE_END)
-TSB_MULT = args.Tsb
 A_dim = args.A_dim
 B_dim = args.B_dim
 C_dim = args.C_dim
-THREADS = args.threads
 AT = args.AT
 C_blocks = args.C_blocks
 
 input_file = args.infile
-outfile = args.outfile
 outfile_asm = args.outfile_asm
 #assert C_dim % C_blocks == 0
-GSY = C_dim // C_blocks
-TSB =int( GSY * TSB_MULT)
 TSZ = C_dim // C_blocks if C_dim % C_blocks == 0 else C_dim // C_blocks + 1
 
 X86 = args.x86
@@ -67,11 +53,8 @@ else:
 
 VEC=16
 
-IN_FORMAT = args.in_format
-OUT_FORMAT = args.out_format
-
-if IN_FORMAT == "NHWC" or OUT_FORMAT == "NHWC":
-    assert False
+IN_FORMAT = "NCHW"
+OUT_FORMAT = "NCHW"
 
 input_file_bias = args.infile_bias
 if input_file_bias:
@@ -118,7 +101,7 @@ def emit_load_block(index, currloadreg):
     return LOAD_CACHE_ASM.replace("IDX1",str(index[0])).replace("IDX2",str(index[1])). \
         replace("IDX3",str(index[2])).replace("IDX4",str(index[3])).replace("NUM",str(currloadreg)).replace("DA",str(17))
 
-def emit_compute_block(Ny_idx,vals,currloadreg, virg=False):
+def emit_compute_block(Ny_idx,vals,currloadreg):
     global off
     
     new_block_asm = ""
@@ -142,9 +125,7 @@ def ny_to_a(ny_idx,groupId,blockId, A_dim = None, A_offset = None):
     return A_offset + ny_idx
 
 
-def generate_from_B(Ny_indices, B_indices,BA,block,NY,BB_offset, GY = None,A_offset=None):
-
-    program = ""
+def generate_from_B(Ny_indices, B_indices,BA,block,NY,BB_offset,A_offset=None):
 
     asm = """
     ..B1.NUM1:
@@ -187,8 +168,7 @@ def generate_from_B(Ny_indices, B_indices,BA,block,NY,BB_offset, GY = None,A_off
     padded_B_indices = []
 
     counter = 0
-    old_B_idx = -1
-    for ny_idx, b_idx in zip(Ny_indices[0],B_indices[0]):
+    for ny_idx, b_idx in zip(Ny_indices,B_indices):
         #assert ny_idx == 0 # for now. We are going to handle AT for quantized at a later date if at all.
         if ny_idx != 0 :
             continue # we are going to just process the first element in each A tile. 
@@ -211,6 +191,10 @@ def generate_from_B(Ny_indices, B_indices,BA,block,NY,BB_offset, GY = None,A_off
         ny_idx = 0
         a_idx = ny_to_a(ny_idx,0,block,A_dim = A_dim, A_offset=A_offset)
         global B_idx
+
+        # this really complicated stuff is used to deal with cases when there are fewer than 4 nonzeros left in the B-row. 
+        # I suppose you could just pad the weights with zero and take away this custom logic -- you will generate marginally more instructions
+        # but does it really matter
 
         if -1 in b_indices:
             assert(b_indices[0] != -1)
@@ -240,12 +224,14 @@ def generate_from_B(Ny_indices, B_indices,BA,block,NY,BB_offset, GY = None,A_off
             #print(b_indices)
             num_vals = np.where(np.array(b_indices) == -1)[0][0]
             #print(num_vals)
+
+            # we are going to keep track of the nonzero values in the program access order. This is the array we save to disk as the storage of our sparse matrix.
             values = []
             for k in range(BLOCK):
                 values.append( np.array([BA[b_indices[i],a_idx + k] for i in range(num_vals)] + [0 for j in range(4-num_vals)]).astype(np.int8))
             values = np.hstack(values)
             B_idx.extend(b_indices)
-            compute_block_asm = emit_compute_block(ny_idx ,  values, currloadreg , virg = ny_idx not in done)
+            compute_block_asm = emit_compute_block(ny_idx ,  values, currloadreg )
             computes += compute_block_asm
 
 
@@ -260,7 +246,7 @@ def generate_from_B(Ny_indices, B_indices,BA,block,NY,BB_offset, GY = None,A_off
             values = np.hstack(values)
             
             B_idx.extend(b_indices)
-            compute_block_asm = emit_compute_block(ny_idx ,  values, currloadreg , virg = ny_idx not in done)
+            compute_block_asm = emit_compute_block(ny_idx ,  values, currloadreg )
             computes += compute_block_asm
 
             done.add(ny_idx)
@@ -268,38 +254,23 @@ def generate_from_B(Ny_indices, B_indices,BA,block,NY,BB_offset, GY = None,A_off
     asm += loads
     asm += computes
 
-
-
-
-
     #print(block,group)
-    #program += GROUP_CONTROL_END + "\n"
     global AB_block_offs
     AB_block_offs.append(len(AB_vals))
 
-    return program, asm, done
+    return asm, done
 
 
-def get_idx_balanced(block,BA,A_offset,block_NY,B_bounds = [0,B_dim], GY=None):
-    #print(block_NY)
+def get_idx_balanced(block,BA,A_offset,block_NY,B_bounds = [0,B_dim]):
     BA = BA[B_bounds[0]:B_bounds[1]]
-    Ny_indices = [[] for i in range(GY)]
-    B_indices = [[] for i in range(GY)]
-    nnz = np.sum(np.abs(BA[:,A_offset:A_offset + block_NY]) > EPS )
-    nnz_per_group = nnz // GY
-    curr_group = 0
-    curr_nnz = 0
+    Ny_indices = []
+    B_indices = []
     for B_idx in range(B_dim // B_blocks):
         for ny in range(block_NY):
-            assert curr_group < GY
-            A_idx = ny_to_a(ny,curr_group,block,A_dim = A_dim, A_offset=A_offset)
+            A_idx = ny_to_a(ny,0,block,A_dim = A_dim, A_offset=A_offset)
             if np.abs(BA[B_idx,A_idx]) > EPS:
-                B_indices[curr_group].append(B_idx + B_bounds[0])
-                Ny_indices[curr_group].append(ny)
-                curr_nnz += 1
-            if curr_nnz > nnz_per_group:
-                curr_group += 1
-                curr_nnz = 0
+                B_indices.append(B_idx + B_bounds[0])
+                Ny_indices.append(ny)
 
     return Ny_indices, B_indices
 
@@ -309,7 +280,6 @@ def no_load_balance(BA):
     interval = AT
 
     bounds = [interval * i for i in range(A_blocks)] + [A_dim]
-
     return bounds , interval
 
 def load_balancer2(BA):
@@ -326,8 +296,7 @@ def load_balancer2(BA):
 
 
 # name is the name of the numpy file
-def gencode(BA,outfile,C_dim,A_blocks,C_blocks,GY,name=None):
-    program = ""
+def gencode(BA,C_dim,A_blocks,C_blocks,name=None):
     asm_program = """
 # -- Begin  _spmm
         .text
@@ -352,56 +321,51 @@ _spmm:
         subq      $96, %rsp                                     #45.1
         mov         $0xf0 , %ebx;               
         kmovb       %ebx, %k1
-        movq      (%rdi), %rcx                                  #47.38
-        movq      8(%rdi), %rsi                                 #48.46
-        movq      16(%rdi), %r8                                 #49.41
-        movq      24(%rdi), %rdx                                #50.22
-        movq      32(%rdi), %rbx
-        movl      44(%rdi), %eax
-        movl      40(%rdi), %edi                                #51.21
+        movq      (%rdi), %rcx                                  # the first argument which is packed nonzero values pointer
+        movq      8(%rdi), %rsi                                 # the second argument which is bias values pointer
+        movq      16(%rdi), %r8                                 # the third argument which is input matrix pointer
+        movq      24(%rdi), %rdx                                # the fourth argument which is output matrix pointer
+        movq      32(%rdi), %rbx                                # the scale
+        movl      44(%rdi), %eax                                # end iteration count in the C dimension, useful for multithreading
+        movl      40(%rdi), %edi                                # start iteration count in the C dimension, useful for multithreading
         decl    %eax
         decl    %edi
         imul     $TSZ, %eax, %r9d
         
-        vpmovzxbd   vpermt2d_control(%rip), % zmm25;
+        vpmovzxbd   vpermt2d_control(%rip), % zmm25;            # initialize the control avx vectors which we are going to use for permutes and shuffles
         vbroadcasti32x4   vpshufb_control(%rip), % zmm26;
-        
 
-
-
-    """.replace("BOUND",str(C_blocks//THREADS)).replace("TSZ",str(TSZ))
+    """.replace("TSZ",str(TSZ))
 
     #assert A_dim % A_blocks == 0
     #assert C_dim % C_blocks == 0
     B_dim = BA.shape[0]
 
-    # if IN_FORMAT == "NCHW" and OUT_FORMAT == "NCHW":
-    #     bounds, NY = load_balancer2(BA)
-    # else:
+    # can try different load balancing schemes here. usually for random sparsity patterns no need to load balance at all.
     bounds, NY = no_load_balance(BA)
-
-    program += START_NONFUSED.replace("OUTPUT_FORMAT",OUT_FORMAT).replace("INPUT_FORMAT",IN_FORMAT).replace("Ny",str(NY)).replace("GY",str(GY)).replace("A_dim",str(A_dim)).replace(
-        "C_dim",str(C_dim)).replace("B_dim",str(B_dim)).replace("A_BLOCKS",str(A_blocks)).replace("C_BLOCKS",str(C_blocks)).replace("BOUND",str(C_blocks//4)).replace("X86_DEF",str(int(X86))).replace("ARM_DEF",str(int(ARM))) + "\n"
+    #bounds, NY = load_balancer2(BA)
 
     assert B_dim % B_blocks == 0
     block_size = B_dim // B_blocks
     for b_block in range(B_blocks):
+
+        # basic block offset. Also used to determine if B_blocks == 0, which means different basic block initialization/termination
         bb_offset = b_block * A_blocks * 2
         for block in range(A_blocks):
             A_offset = bounds[block]
             block_NY = bounds[block+1] - A_offset
-            program += BLOCK_CONTROL_START.replace("BLOCK", str(block)).replace("Ny",str(block_NY)) + "\n"
+            # if the bounds are fixed, i.e. no load balance, then block_NY should be the same every iteration.
 
+            # this gets the indices of the nonzero values in this block
+            Ny_indices, B_indices = get_idx_balanced(block,BA,A_offset,block_NY,B_bounds = [b_block * block_size, (b_block + 1) * block_size])
 
-            Ny_indices, B_indices = get_idx_balanced(block,BA,A_offset,block_NY,B_bounds = [b_block * block_size, (b_block + 1) * block_size],GY=GY)
-            #import pdb;pdb.set_trace()
-            ccode, asm, done = generate_from_B(Ny_indices,B_indices,BA,block,block_NY,bb_offset, GY=GY,A_offset=A_offset)
-            #ccode = generate_c_stem(block_NY)
-
-            program += textwrap.indent(ccode,"\t") + "\n"
+            # generate the unrolled code for this basic block
+            asm, done = generate_from_B(Ny_indices,B_indices,BA,block,block_NY,bb_offset, A_offset=A_offset)
             asm_program += textwrap.indent(asm,"\t") + "\n"
-               
+            
+            # generate the epilogue logic. This is different depending on B_blocks value (should we cache intermediate results or write results with post-op to output)
             if b_block == B_blocks - 1:
+                # any post op implementation goes here. The following sequence implements an optional value and then dequantization.
                 for i in range(block_NY):
                     asm_program += "\t\tvbroadcastss " + str(mapping[A_offset + i] * 4) + "(%rbx), %zmm20;\n"
                     for j in range(CT):
@@ -421,8 +385,6 @@ _spmm:
             else:
                 for i in range(block_NY):
                     for j in range(CT):
-                        #print(str(mapping[A_offset + i] * C_dim * 4 + j * VEC * 4))
-                        
                         asm_program += "\t\tvmovdqu32 %zmm" + str(i + j * AT) + ", " + str(mapping[A_offset + i] * C_dim * 4 + j * VEC * 4) + "(%rdx,%r11,4);\n"
 
 
@@ -432,8 +394,6 @@ _spmm:
             """.replace("NUM",str(bb_offset + block * 2 + 3)).replace("END",str(TSZ // VEC))
             
 
-    program += END_NONFUSED.replace("AB_sparse_tidy.npy",name)
-    open(outfile,"w").write(program.replace("B_dim",str(B_dim)))
     asm_program += """
     ..B1.NUM1:                        # Preds ..B1.17
                                 # Execution count [2.80e+01]
@@ -462,8 +422,6 @@ _spmm:
         vpermt2d_control: .byte 0,4,16,20, 1,5,17,21, 2, 6, 18, 22,3,7,19,23 
         vpshufb_control:  .byte 0,4,8,12,  1,5,9,13, 2,6,10,14, 3,7,11,15  
 # -- End  _spmm
-
-
 
     """.replace("TSZ",str(TSZ)).replace("CBLOCKS",str(C_blocks)).replace("NUM1",str(B_blocks * A_blocks *2 + 2)).replace("NUM2",str(B_blocks * A_blocks * 2 + 3))
 
@@ -494,7 +452,7 @@ else:
 
 
 print("Reduced A dimension " + str(A_dim))
-gencode(BA,outfile,C_dim,A_blocks,C_blocks,GY,name=input_file)
+gencode(BA,C_dim,A_blocks,C_blocks,name=input_file)
 np.save("AB_vals.npy",np.array(AB_vals))
 np.save("AB_block_off.npy",np.array(AB_block_offs).astype(np.int32))
 np.save("A_idx.npy",np.array(A_idx).astype(np.int32))
