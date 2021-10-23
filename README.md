@@ -3,6 +3,9 @@
 **If you want to use this repo, please send me an email: zihengw@stanford.edu, or raise a Github issue. 
 **
 
+**Sparse INT8 knerels are here.
+**
+
 Fast sparse deep learning on CPUs. This is the kernel library generator described in the paper: https://arxiv.org/abs/2101.07948
 My other repo on sparse deep learning on GPUs: https://github.com/marsupialtail/gpu-sparsert. Will merge at some point when I'm feeling less lazy.
 
@@ -12,7 +15,7 @@ C++ API: check out driver_cpu.cpp, or run autotune_cpu_random.sh 128 128 128 0. 
 
 Python API has some bad overhead due to using ctypes. This is noticeable for smaller matrices but not really noticeable for large matrices. The benchmarkings done in the Arxiv paper was all done with the C++ API. 
 
-**Work that is not yet open sourced: kernel generator for sparse convolutions (as described in the Arxiv paper) using implicit convolution, lightweight inference engine to get end-to-end results, sparse int8 kernels. If interested in any of this please email.**
+**Work that is not yet open sourced: kernel generator for sparse convolutions (as described in the Arxiv paper) using implicit convolution, lightweight inference engine to get end-to-end results. If interested in any of this please email.**
 
 FAQs:
 1) How does this compare to Neuralmagic? Last time I checked the deepsparse library does not allow you to run kernel-level benchmarks. If you care about end to end neural network acceleration, you should definitely go with Neuralmagic if they happen to support your model.
