@@ -7,12 +7,12 @@ mode=$4
 infile=matrix_transposed.npy
 python generate_test_matrix.py $A_dim $B_dim $C_dim $mode
 
-C_blocks=1
+C_blocks=4
 Gy=1
 besttime=100000
-for AT in 1; do
-	for B_blocks in 2; do
-		for CT in 1; do
+for AT in 1 2 4; do
+	for B_blocks in 4 8 16; do
+		for CT in 1 2 4; do
 
 			if [ $(($AT * $CT)) -gt 12 ]; then
 				continue
@@ -20,7 +20,7 @@ for AT in 1; do
 			python code_gen_cpu.py --A_dim $A_dim --B_dim $B_dim --C_dim $C_dim --AT $AT --CT $CT --B_blocks $B_blocks --C_blocks $C_blocks --Gy $Gy --infile $infile --outfile testing.cpp --outfile_asm test1.s --x86 --no_relu --infile_bias bias.npy --fuse
 			#icc -fopenmp -shared -fPIC -O3 -march=native testing.cpp -o test1.s -S
 			gcc -shared -g test1.s -o test.so
-			icc -I . -mkl -O0 -g -march=native -D AT=$AT -D CT=$1 -D C_Blocks=$C_blocks -DA_dim=$A_dim -DINFILE=$infile -D B_dim=$B_dim -D C_dim=$C_dim -D C_blocks=$C_blocks -D X86=1 -D MULTI=0 driver_cpu.cpp -lcnpy -o test -std=c++17
+			icc -fopenmp -I . -mkl -O3 -march=native -D AT=$AT -D CT=$1 -D C_Blocks=$C_blocks -DA_dim=$A_dim -DINFILE=$infile -D B_dim=$B_dim -D C_dim=$C_dim -D C_blocks=$C_blocks -D X86=1 -D MULTI=0 driver_cpu.cpp -lcnpy -o test -std=c++17
 			./test > runtime
 			python test_equivalence.py cpu_output.npy ref.npy
                         runtime=$(grep "millisecond" runtime | awk '{print $3}')

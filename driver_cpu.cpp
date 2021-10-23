@@ -15,6 +15,7 @@
 #include <chrono>
 //#define 64 (64 / 1 / Tsy)
 #include <cstdlib>
+#include <omp.h>
 using namespace std;
 
 const int COUNT = 4;
@@ -29,6 +30,7 @@ struct thread_data {
         const int * __restrict__ AB_bias;
         const int8_t * __restrict__ BC;
         int8_t * AC;
+        const float * scale;
         int start;
         int end;
 };
@@ -114,54 +116,6 @@ void clear_cache()
         }
 }
 
-void spmm ( const int * AB_off, const float * AB_vals, const int * A_idx, const int * B_idx, const float * BC, float * AC)
-{
-        __m256 accum[AT][CT];
-        int TSZ = C_dim / C_Blocks;
-
-        for(int a_block = 0; a_block < A_dim / AT; a_block ++)
-        {
-            int start_idx = AB_off[a_block];
-            int end_idx = AB_off[a_block];
-
-
-            for(int c_block = 0; c_block < C_Blocks; c_block ++)
-            {
-
-                for(int c = TSZ * C_Blocks; c < TSZ * C_Blocks + TSZ; c += CT * 8)
-                {
-                    for(int i = 0; i < AT; i ++)
-                    {
-                        for(int j = 0; j < CT; j ++)
-                        {
-                            accum[i][j] = _mm256_set1_ps(0.0f);
-                        }
-                    }
-                    for(int b = start_idx; b < end_idx; b++) {
-
-                        __m256 b_val = _mm256_broadcast_ss(AB_vals + b);
-                        int a_idx = A_idx[b];
-                        int b_idx = B_idx[b];
-                        for(int ct = 0; ct < CT; ct ++)
-                        {
-                            __m256 RC = _mm256_load_ps(&BC[b_idx * C_dim + c + ct * 8]);
-                            accum[a_idx][ct] = _mm256_fmadd_ps(RC, b_val, accum[a_idx][ct]);
-
-                        }
-                    }
-                    for(int i = 0; i < AT; i ++)
-                    {
-                        for(int j = 0; j < CT; j ++)
-                        {
-                            _mm256_store_ps(&AC[(a_block * AT + i) * C_dim + c + j * 8],accum[i][j]);
-                        }
-                    }
-                }
-
-            }
-        }
-}
-
 
 
 static void* (*mm)(void*);
@@ -212,19 +166,10 @@ int main()
 	//assert(arr3.shape.size() ==1 && arr3.shape[0] == A_dim);
 #endif
 
-#if !(INT8)
-    cnpy::NpyArray arr4 = cnpy::npy_load("AB_block_off.npy");
-    int *AB_off = arr4.data<int>();
-    assert(arr4.word_size = sizeof(int));
-
-    cnpy::NpyArray arr5 = cnpy::npy_load("A_idx.npy");
-    int *A_idx = arr5.data<int>();
-    assert(arr5.word_size = sizeof(int));
-
-    cnpy::NpyArray arr6 = cnpy::npy_load("B_idx.npy");
-    int *B_idx = arr6.data<int>();
-    assert(arr6.word_size = sizeof(int));
-#endif
+#if INT8
+	cnpy::NpyArray arr4 = cnpy::npy_load("scale.npy");
+	float * scale = arr4.data<float>();
+#endif 
 
 
     cnpy::NpyArray arr7 = cnpy::npy_load("ref.npy");
@@ -316,41 +261,49 @@ int main()
         //printf (" Load at %.5f milliseconds == \n\n", (s_elapsed * 1000));
 
 
-  struct thread_data td[1000][THREADS];
-  for(int j = 0 ; j < 1000; j ++){
-	for(int i = 0; i < THREADS; i ++)
-	{
-		td[j][i].AB_val = AB_vals;
-		td[j][i].AB_bias= AB_bias;
-		//td[j][i].BC = &BCs[j % 2 * B_dim * C_dim];
-	        td[j][i].BC = &BCs[0];
-		//td[j][i].BC = &BCs[j * B_dim * C_dim];
-		td[j][i].AC = result; 
-		//td[j][i].AC = &BCs[0]; 
-
-		//td[j][i].AC = j == 999 ? result :& BCs[((j+1)%2) * B_dim * C_dim];
-
+  struct thread_data td[THREADS];
+  for(int i = 0; i < THREADS; i ++)
+  {
+	td[i].AB_val = AB_vals;
+	td[i].AB_bias= AB_bias;
+	td[i].BC = &BCs[0];
+	td[i].AC = result; 
+    td[i].scale = scale;
 #if MULTI
-        td[j][i].start = i * BOUND;
-		td[j][i].end = min(i * BOUND + BOUND, C_blocks);
+        td[i].start = i * BOUND;
+	td[i].end = min(i * BOUND + BOUND, C_blocks);
 #else
-		td[j][i].start = 0;//i * BOUND  ;
-        td[j][i].end = C_blocks;//min(i * BOUND + BOUND, C_blocks);
+	td[i].start = 0;//i * BOUND  ;
+        td[i].end = C_blocks;//min(i * BOUND + BOUND, C_blocks);
 #endif
 
-	}
   }
+#if MULTI
+    // warm up omp thread pool
+	#pragma omp parallel for
+        for(int i = 0; i < THREADS; i ++)
+	{
+          mm(&td[i]);
+	}
+#endif
     auto issed = 0;
-
     void * status;
-
     t1 = high_resolution_clock::now();
-
+#if MULTI
     while(issed < 10 ) {
-
-        mm(&td[0][0]);
+	#pragma omp parallel for
+        for(int i = 0; i < THREADS; i ++)
+	{
+          mm(&td[i]);
+	}
         issed += 1;
     }
+#else
+    while(issed < 10 ) {
+         mm(&td[0]);
+        issed += 1;
+    }
+#endif
 
     t2 = high_resolution_clock::now();
     ms_double = t2 - t1;	
@@ -359,16 +312,25 @@ int main()
 	int reps = 20000 / ms_double.count();
 //    int reps = 20;
 
+    std::cout << reps << std::endl;
     t1 = high_resolution_clock::now();
 
     issed = 0;
-    std::cout << reps << std::endl;
-
+#if MULTI
     while(issed < reps ) {
-
-        mm(&td[0][0]);
+	#pragma omp parallel for
+        for(int i = 0; i < THREADS; i ++)
+	{
+          mm(&td[i]);
+	}
         issed += 1;
     }
+#else
+    while(issed < reps ) {
+         mm(&td[0]);
+        issed += 1;
+    }
+#endif
    t2 = high_resolution_clock::now();
     ms_double = t2 - t1;
     printf (" == spmm microkernel == \n== at %.5f milliseconds == \n == %d reps == ", (ms_double.count() / reps), reps);

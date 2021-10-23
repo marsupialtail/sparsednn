@@ -167,6 +167,10 @@ def generate_from_B(Ny_indices, B_indices,BA,block,NY,BB_offset,A_offset=None):
     padded_Ny_indices = []
     padded_B_indices = []
 
+    # For some wierd legacy reasons, I call A_indices Ny_indices, which are A_indices relative to the block 
+    # But we are basically going to take all the Ny_indices and corresponding B_indices, and pad them with -1 so that length is multiple of 4
+    # note we don't require 4 nonzero weights to be sequential, we can just pack them together and inline their corresponding read addresses in BC into the code
+
     counter = 0
     for ny_idx, b_idx in zip(Ny_indices,B_indices):
         #assert ny_idx == 0 # for now. We are going to handle AT for quantized at a later date if at all.
@@ -180,7 +184,6 @@ def generate_from_B(Ny_indices, B_indices,BA,block,NY,BB_offset,A_offset=None):
     padded_Ny_indices.extend([-1] * pad_len)
     padded_B_indices.extend([-1] * pad_len)
     #print(padded_B_indices,len(padded_B_indices))
-    #for ny_idx, b_idx in zip(padded_Ny_indices[0],padded_B_indices[0]):
     for pos in range(0,len(padded_Ny_indices),4):
         b_indices = padded_B_indices[pos:pos+4]
         currloadreg = TOK #(currloadreg - TOK + 1) % 6 + TOK
