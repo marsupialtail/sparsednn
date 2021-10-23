@@ -288,7 +288,7 @@ int main()
 #endif
     auto issed = 0;
     void * status;
-    t1 = high_resolution_clock::now();
+    /*t1 = high_resolution_clock::now();
 #if MULTI
     while(issed < 10 ) {
 	#pragma omp parallel for
@@ -308,9 +308,10 @@ int main()
     t2 = high_resolution_clock::now();
     ms_double = t2 - t1;	
 	//memset(result,0,A_dim * C_dim * sizeof(result));
-
-	int reps = 20000 / ms_double.count();
-//    int reps = 20;
+*/
+    std::cout << "using one rep for SDE. Please use higher count on acutal hardware" << std::endl;
+//	int reps = 20000 / ms_double.count();
+    int reps = 1;
 
     std::cout << reps << std::endl;
     t1 = high_resolution_clock::now();
