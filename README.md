@@ -12,6 +12,7 @@ My other repo on sparse deep learning on GPUs: https://github.com/marsupialtail/
 Python API: python fastsparse.py. Minimal required dependencies. Should work anywhere.
 
 C++ API: check out driver_cpu.cpp, or run autotune_cpu_random.sh 128 128 128 0. This requires cnpy to read numpy files, so make sure that you can link to cnpy.
+C++ API only: for block sparse int8 matrix multiply, run autotune_cpu_random_int8.cpu 512 512 128.
 
 Python API has some bad overhead due to using ctypes. This is noticeable for smaller matrices but not really noticeable for large matrices. The benchmarkings done in the Arxiv paper was all done with the C++ API. 
 
