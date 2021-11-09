@@ -7,12 +7,12 @@ N = int(sys.argv[3])
 int8 = True if int(sys.argv[4]) == 1 else False
 if int8:
     #scale = np.random.normal(size=(M)).astype(np.float32)
-    scale = np.ones((M)).astype(np.float32) * 2
+    scale = np.ones((M)).astype(np.float32) 
 else:
     scale = 1
 bias = np.random.normal(size=(M))
 #bias = np.zeros((M))
-AB = 1 + np.abs(np.random.normal(size=(K,M)).astype(np.float32))
+AB = 1 + np.abs(np.random.normal(size=(K,M)).astype(np.float32) * 3)
 
 BLOCK = int(sys.argv[5])
 locs = [i for i in range(M* K) if i %BLOCK == 0]
@@ -24,6 +24,9 @@ for i in range(BLOCK):
 #
 AB = AB.transpose().copy()
 
+#mask = (AB > 0) * 3
+#AB = AB - mask
+#print(AB)
 #AB = AB * (AB > 2.7)
 #BC = np.random.normal(size=(K,N)).astype(np.float32)
 BC = np.ones((K,N)).astype(np.float32)
@@ -34,6 +37,9 @@ if int8:
     AB = AB.astype(np.int8)
     BC = BC.astype(np.uint8)
     bias = bias.astype(np.int32)
+
+AB = -AB
+
 
 print("density",np.count_nonzero(AB) / M/ K)
 AC = np.dot(AB,BC) + np.expand_dims(bias,1)

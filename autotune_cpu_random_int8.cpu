@@ -4,7 +4,7 @@ A_dim=$1
 B_dim=$2
 C_dim=$3
 infile=matrix_transposed.npy
-BLOCK=4
+BLOCK=1
 python generate_test_matrix.py $A_dim $B_dim $C_dim 1 $BLOCK
 biasfile=bias.npy
 C_blocks=1

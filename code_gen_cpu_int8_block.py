@@ -87,7 +87,7 @@ if X86:
 
     LOAD_WEIGHT_ASM = """vpbroadcastd OFF(%rcx), %zmmIDX;
     """
-    MAIN_PROGRAM_ASM="""vpdpbusd %zmmNUM,%zmmIDX,%zmmTAR;
+    MAIN_PROGRAM_ASM="""vpdpbusd %zmmNUM,%zmmIDX, %zmmTAR;
     """
 
 elif ARM:
@@ -376,8 +376,8 @@ _spmm:
                             asm_program += "\t\tvmaxsb %zmm" + str(i + j * AT) + ", %zmm27, %zmm" + str(i + j * AT) + ";\n"
                         asm_program += "\t\tvcvtdq2ps {rn-sae}, %zmm" + str(i + j * AT) + ",%zmm" + str(i + j * AT) + ";\n"
                         asm_program += "\t\tvmulps %zmm" + str(i + j * AT) + ",%zmm20, %zmm" + str(i + j * AT) + ";\n"
-                        asm_program += "\t\tvcvtps2udq {rn-sae}, %zmm" + str(i + j * AT) + ",%zmm" + str(i + j * AT) + ";\n"
-                        asm_program += "\t\tvpmovusdb %zmm" + str(i + j * AT) + ",%xmm" + str(i + j * AT) + ";\n"
+                        asm_program += "\t\tvcvtps2dq {rn-sae}, %zmm" + str(i + j * AT) + ",%zmm" + str(i + j * AT) + ";\n"
+                        asm_program += "\t\tvpmovdb %zmm" + str(i + j * AT) + ",%xmm" + str(i + j * AT) + ";\n"
 
                     asm_program += """
                     vinserti32x4 $1,%xmmONE,%zmmZERO,%zmmZERO;
